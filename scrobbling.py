@@ -124,6 +124,15 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
                     done()
         Thread(target=lambda: inner()).start()
 
+    def progress(self):
+        elapsed_time = self.now_playing_metadata.elapsedTime
+        cur_cocoa_time = (datetime.utcnow() - cocoa_time).total_seconds()
+        increment = cur_cocoa_time - self.now_playing_metadata.elapsedTimeTimestamp
+        if increment > 5 and elapsed_time + increment < self.now_playing_metadata.duration:
+            elapsed_time += increment
+        progress = elapsed_time * 100 / self.now_playing_metadata.duration
+        return progress
+
     def set_metadata(self, metadata):
         if self.is_invalid_metadata():
             self.playback_state = self.pending_playback_state
@@ -162,7 +171,12 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
 
         if prevPlaybackState != self.playback_state and prevPlaybackState is not None:
             if self.playback_state == Common_pb2.PlaybackState.Paused:
-                self.post_trakt_update(Trakt['scrobble'].pause)
+                progress = self.progress()
+                logging.info("Stop with progress " + str(progress))
+                if abs(progress) > 92:
+                    self.stop_scrobbling()
+                else:
+                    self.post_trakt_update(Trakt['scrobble'].pause)
             elif self.playback_state == Common_pb2.PlaybackState.Playing:
                 self.post_trakt_update(Trakt['scrobble'].start)
 
