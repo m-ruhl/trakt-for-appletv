@@ -16,7 +16,20 @@ from duckduckgo_search import DDGS
 from itertools import islice
 
 from lxml import etree
+
 import json
+
+import logging
+logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s',filename='scrobbler.log',level=logging.DEBUG)
+logging.getLogger("httpx").setLevel(logging.WARN)
+logging.getLogger("httpcore").setLevel(logging.WARN)
+logging.getLogger("hpack").setLevel(logging.INFO)
+logging.getLogger("requests").setLevel(logging.INFO)
+logging.getLogger("pyatv").setLevel(logging.WARN)
+stderrLogger=logging.StreamHandler()
+stderrLogger.setFormatter(logging.Formatter('[%(levelname)s]: %(message)s'))
+logging.getLogger().addHandler(stderrLogger)
+
 
 from trakt import Trakt
 from media_remote import MediaRemoteProtocol
@@ -55,7 +68,7 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
         if os.path.exists('data/trakt.auth'):
             response = pickle.load(open('data/trakt.auth', 'rb'))
         else:
-            print('Navigate to %s' % Trakt['oauth'].authorize_url('urn:ietf:wg:oauth:2.0:oob'))
+            logging.info('Navigate to %s' % Trakt['oauth'].authorize_url('urn:ietf:wg:oauth:2.0:oob'))
             pin = input('Authorization code: ')
             response = Trakt['oauth'].token(pin, 'urn:ietf:wg:oauth:2.0:oob')
             self.on_trakt_token_refreshed(response)
@@ -71,27 +84,36 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
         protocol.listen_to(ProtocolMessage.DEVICE_INFO_MESSAGE, self.message_received)
 
     async def message_received(self, msg):
+        logging.info("------------------------------")
         if msg.type == ProtocolMessage.SET_STATE_MESSAGE:
+            logging.debug("Set state")
             state_msg = msg.inner()
             if state_msg.HasField('playerPath'):
+                logging.debug("playerpath")
                 self.current_player = state_msg.playerPath.client.bundleIdentifier
-            if state_msg.HasField('playbackState'):
-                prevPlaybackState = self.playback_state
-                if self.is_invalid_metadata():
-                    self.pending_playback_state = state_msg.playbackState
-                else:
-                    self.playback_state = state_msg.playbackState
-                self.update_scrobbling(prevPlaybackState=prevPlaybackState)
+
             if len(state_msg.playbackQueue.contentItems) > 0:
+                logging.debug("metadata")
                 content_item = state_msg.playbackQueue.contentItems[0]
                 if content_item.HasField('metadata') and content_item.metadata.ByteSize() > 0:
                     self.set_metadata(content_item.metadata)
             elif state_msg.HasField('playbackQueue'):
                 # Amazon Prime doesn't remove player, only pauses the playback
                 self.stop_scrobbling()
+                
+            if state_msg.HasField('playbackState'):
+                logging.debug("playbackState: " + str(state_msg.playbackState))
+                prevPlaybackState = self.playback_state
+                if self.is_invalid_metadata():
+                    self.pending_playback_state = state_msg.playbackState
+                else:
+                    self.playback_state = state_msg.playbackState
+                self.update_scrobbling(prevPlaybackState=prevPlaybackState)
         elif msg.type == ProtocolMessage.REMOVE_PLAYER_MESSAGE:
+            logging.debug("Remove player")
             self.stop_scrobbling()
         elif msg.type == ProtocolMessage.UPDATE_CONTENT_ITEM_MESSAGE:
+            logging.debug("Update content")
             updateMsg = msg.inner()
             content_item = updateMsg.contentItems[0]
             if content_item.HasField("metadata") and content_item.metadata.ByteSize() > 0:
@@ -204,9 +226,11 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
 
     def handle_tvshows(self, operation, progress):
         if self.now_playing_metadata.HasField('seasonNumber'):
+            logging.info("ATV: Season detected")
             season_number = self.now_playing_metadata.seasonNumber
             episode_number = self.now_playing_metadata.episodeNumber
         else:
+            logging.info("ATV: searching content id")
             info = self.get_itunes_title(self.now_playing_metadata.contentIdentifier)
             if info is None:
                 return
@@ -220,6 +244,7 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             title = self.now_playing_metadata.seriesName
             if len(title) == 0:
                 title = self.now_playing_metadata.title
+            logging.info("ATV found: " + title)
             return title
         return None
 
@@ -239,6 +264,7 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             return known['season'], known['episode']
         result = json.loads(urlopen('https://itunes.apple.com/lookup?country=de&id=' + contentIdentifier).read()
                             .decode('utf-8'))
+        logging.debug("ATV: "+ 'https://itunes.apple.com/lookup?country=de&id=' + contentIdentifier)
         if result['resultCount'] == 0:
             result = self.get_apple_tv_plus_info(self.get_title())
             if not result:
@@ -246,34 +272,42 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             season, episode = result
         else:
             result = result['results'][0]
+            logging.debug("TV: title: " + result['trackName'])
             match = re.match("^Season (\\d\\d?), Episode (\\d\\d?): ", result['trackName'])
             if match is not None:
                 season = int(match.group(1))
                 episode = int(match.group(2))
             else:
-                season = int(re.match(".*, Season (\\d\\d?)( \\(Uncensored\\))?$", result['collectionName']).group(1))
+                logging.debug("TV: title2: " + result['collectionName'])
+                season = int(re.match(".*, Season ([0-9]+)( \\(Uncensored\\))?$", result['collectionName']).group(1))
                 episode = int(result['trackNumber'])
         self.itunes_titles[contentIdentifier] = {'season': season, 'episode': episode}
         return season, episode
 
     def handle_netflix(self, operation, progress):
+        logging.info("NF: " + self.now_playing_metadata.title)
         match = re.match('^S(\\d\\d?): E(\\d\\d?) (.*)', self.now_playing_metadata.title)
         if match is not None:
             key = self.now_playing_metadata.title + str(self.now_playing_metadata.duration)
             title = self.netflix_titles.get(key)
+
             if not title:
                 if self.now_playing_metadata.contentIdentifier:
+                    logging.info("NF: contentId detected" )
                     title = self.get_netflix_title(self.now_playing_metadata.contentIdentifier)
                 else:
+                    logging.info("NF: Searching with description")
                     title = self.get_netflix_title_from_description(match.group(3))
                     if not title:
                         return
                 self.netflix_titles[key] = title
             if title:
+                logging.info("NF: Found title: " + title)
                 operation(show={'title': title},
                           episode={'season': match.group(1), 'number': match.group(2)},
                           progress=progress)
         else:
+            logging.info("NF: Match movie")
             operation(movie={'title': self.now_playing_metadata.title}, progress=progress)
 
     def search_by_description(self, query):
@@ -281,6 +315,7 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             self.request_now_playing_description()
 
         query += ' "' + self.now_playing_description + '"'
+        logging.debug("DDG: searching: " + query)
         try:
             with DDGS() as ddgs:
                 ddgs_gen = ddgs.text(query)
@@ -291,11 +326,14 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
 
     def get_netflix_title_from_description(self, episode_title):
         data = self.search_by_description("site:netflix.com")
+
+        logging.debug(data)
         if not data:
             return None
 
         match = re.search('netflix\\.com/(.+?/)?title/(\\d+)', data)
         if not match:
+            logging.info("NF: Nothing matched")
             return None
         contentIdentifier = match.group(2)
         title = self.get_netflix_title(contentIdentifier)
@@ -339,6 +377,7 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
 
     @staticmethod
     def get_netflix_title(contentIdentifier):
+        logging.info("NF: fetch content id")
         data = urlopen('https://www.netflix.com/title/' + contentIdentifier).read()
         xml = etree.parse(BytesIO(data), etree.HTMLParser())
         info = json.loads(xml.xpath('//script')[0].text)
