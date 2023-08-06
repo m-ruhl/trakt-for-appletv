@@ -290,7 +290,7 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             return None
 
     def get_netflix_title_from_description(self, episode_title):
-        data = self.search_by_description("site:netflix.com " + episode_title)
+        data = self.search_by_description("site:netflix.com")
         if not data:
             return None
 
@@ -299,7 +299,7 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             return None
         contentIdentifier = match.group(2)
         title = self.get_netflix_title(contentIdentifier)
-        return title
+        return title.replace(" (U.S.)", "")
 
     def get_apple_tv_plus_info(self, title):
         data = self.search_by_description("site:tv.apple.com " + title)
