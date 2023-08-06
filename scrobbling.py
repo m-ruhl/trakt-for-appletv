@@ -130,7 +130,15 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             prevPlaybackState = Common_pb2.PlaybackState.Stopped
         else:
             prevPlaybackState = None
-        self.now_playing_metadata = copy.copy(metadata)
+
+        newMetadata = copy.copy(metadata)
+
+        if self.now_playing_metadata is not None and self.now_playing_metadata.title != newMetadata.title:
+            self.last_elapsed_time = None
+            self.last_elapsed_time_timestamp = None
+            self.now_playing_description = None
+
+        self.now_playing_metadata = newMetadata
         self.update_scrobbling(prevPlaybackState=prevPlaybackState)
 
     def is_invalid_metadata(self):
