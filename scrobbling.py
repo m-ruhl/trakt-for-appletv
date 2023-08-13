@@ -268,13 +268,13 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             result = json.loads(urlopen('https://itunes.apple.com/lookup?country=de&id=' + contentIdentifier).read()
                             .decode('utf-8'))
             result = result['results'][0]
-            logging.debug("TV: title: " + result['trackName'])
-            match = re.match("^Season (\\d\\d?), Episode (\\d\\d?): ", result['trackName'])
+            logging.debug("ATV: title: " + result['trackName'])
+            match = re.match("^(Season|Series) (\\d\\d?), Episode (\\d\\d?): ", result['trackName'])
             if match is not None:
-                season = int(match.group(1))
-                episode = int(match.group(2))
+                season = int(match.group(2))
+                episode = int(match.group(3))
             else:
-                logging.debug("TV: title2: " + result['collectionName'])
+                logging.debug("ATV: title2: " + result['collectionName'])
                 season = int(re.match(".*, Season ([0-9]+)( \\(Uncensored\\))?$", result['collectionName']).group(1))
                 episode = int(result['trackNumber'])
         except HTTPError:
