@@ -262,15 +262,11 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
         known = self.itunes_titles.get(contentIdentifier)
         if known:
             return known['season'], known['episode']
-        result = json.loads(urlopen('https://itunes.apple.com/lookup?country=de&id=' + contentIdentifier).read()
+
+        try:
+            logging.debug("ATV: "+ 'https://itunes.apple.com/lookup?country=de&id=' + contentIdentifier)
+            result = json.loads(urlopen('https://itunes.apple.com/lookup?country=de&id=' + contentIdentifier).read()
                             .decode('utf-8'))
-        logging.debug("ATV: "+ 'https://itunes.apple.com/lookup?country=de&id=' + contentIdentifier)
-        if result['resultCount'] == 0:
-            result = self.get_apple_tv_plus_info(self.get_title())
-            if not result:
-                return None
-            season, episode = result
-        else:
             result = result['results'][0]
             logging.debug("TV: title: " + result['trackName'])
             match = re.match("^Season (\\d\\d?), Episode (\\d\\d?): ", result['trackName'])
@@ -281,6 +277,12 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
                 logging.debug("TV: title2: " + result['collectionName'])
                 season = int(re.match(".*, Season ([0-9]+)( \\(Uncensored\\))?$", result['collectionName']).group(1))
                 episode = int(result['trackNumber'])
+        except HTTPError:
+            result = self.get_apple_tv_plus_info(self.get_title())
+            if not result:
+                return None
+            season, episode = result
+            
         self.itunes_titles[contentIdentifier] = {'season': season, 'episode': episode}
         return season, episode
 
@@ -342,8 +344,17 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
     def get_apple_tv_plus_info(self, title):
         data = self.search_by_description("site:tv.apple.com " + title)
 
+        logging.debug(data)
         if not data:
             return None
+
+
+        match = re.search("Season ([0-9]+), Episode ([0-9]+)", data)
+        if match is not None:
+            season = int(match.group(1))
+            episode = int(match.group(2))
+            return season, episode
+
 
         match = re.search('(https://tv\\.apple\\.com/(../)?episode/.*?)\"', data)
         if not match:
