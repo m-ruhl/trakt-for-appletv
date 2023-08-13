@@ -131,18 +131,12 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
                 self.last_trakt_request_timestamp += wait
                 time.sleep(wait)
 
-            elapsed_time = self.now_playing_metadata.elapsedTime
-            cur_cocoa_time = (datetime.utcnow() - cocoa_time).total_seconds()
-            increment = cur_cocoa_time - self.now_playing_metadata.elapsedTimeTimestamp
-            if increment > 5 and elapsed_time + increment < self.now_playing_metadata.duration:
-                elapsed_time += increment
-            progress = elapsed_time * 100 / self.now_playing_metadata.duration
             if self.current_player in self.app_handlers:
                 handler = self.app_handlers[self.current_player]
                 if handler is not None:
                     try:
                         # noinspection PyArgumentList
-                        handler(operation, progress)
+                        handler(operation, self.progress())
                     except ConnectionError:
                         pass
                 if done is not None:
