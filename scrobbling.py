@@ -349,6 +349,12 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             episode = int(match.group(2))
             return season, episode
 
+        match = re.search("S([0-9]+) E([0-9]+)", data)
+        if match is not None:
+            season = int(match.group(1))
+            episode = int(match.group(2))
+            return season, episode
+
 
         match = re.search('(https://tv\\.apple\\.com/(../)?episode/.*?)\"', data)
         if not match:
