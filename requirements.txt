@@ -2,4 +2,4 @@ PyYAML
 trakt.py
 lxml
 pyatv
-duckduckgo_search
+duckduckgo-search
