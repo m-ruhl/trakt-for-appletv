@@ -316,24 +316,39 @@ class ScrobblingRemoteProtocol(MediaRemoteProtocol):
             with DDGS() as ddgs:
                 ddgs_gen = ddgs.text(query)
                 results = [x for x in islice(ddgs_gen, 1)]
+                logging.debug(results)
             return str(results)
         except AssertionError:
+            logging.debug("error")
             return None
 
     def get_netflix_title_from_description(self, episode_title):
         data = self.search_by_description("site:netflix.com")
 
-        logging.debug(data)
+
         if not data:
             return None
 
         match = re.search('netflix\\.com/(.+?/)?title/(\\d+)', data)
         if not match:
             logging.info("NF: Nothing matched")
-            return None
+            return self.get_trakt_title_from_description(episode_title)
         contentIdentifier = match.group(2)
         title = self.get_netflix_title(contentIdentifier)
         return title.replace(" (U.S.)", "")
+
+    def get_trakt_title_from_description(self, episode_title):
+        data = self.search_by_description("site:trakt.tv")
+
+        if not data:
+            return None
+
+        match = re.search('trakt\\.tv/shows/(.+?)/', data)
+        if not match:
+            logging.info("TR: Nothing matched")
+            return None
+        title = match.group(1)
+        return title.replace("-", " ")
 
     def get_apple_tv_plus_info(self, title):
         data = self.search_by_description("site:tv.apple.com " + title)
